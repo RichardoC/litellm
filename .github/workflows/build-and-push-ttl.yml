@@ -1,0 +1,83 @@
+name: Build and Push to ttl.sh
+
+on:
+  workflow_dispatch:
+    inputs:
+      ttl_duration:
+        description: 'TTL duration for the image (e.g., 1h, 24h, 7d)'
+        required: true
+        default: '24h'
+        type: choice
+        options:
+          - '1h'
+          - '6h'
+          - '12h'
+          - '24h'
+          - '2d'
+          - '3d'
+          - '7d'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Only run on the main repository, not on forks
+    if: github.repository == 'RichardoC/litellm'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Generate unique image name
+      id: image
+      run: |
+        IMAGE_NAME=$(uuidgen)
+        echo "name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+        echo "Image name: ${IMAGE_NAME}"
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Display image information
+      run: |
+        echo "================================================"
+        echo "Image successfully pushed to ttl.sh!"
+        echo "================================================"
+        echo ""
+        echo "Image URL: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo ""
+        echo "This image will be available for ${{ inputs.ttl_duration }}"
+        echo ""
+        echo "To pull the image:"
+        echo "  docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo ""
+        echo "To run the image:"
+        echo "  docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo "================================================"
+        
+    - name: Create job summary
+      run: |
+        echo "## 🐳 Docker Image Published to ttl.sh" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**TTL:** ${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Run Command" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
