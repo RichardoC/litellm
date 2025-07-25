@@ -16,6 +16,10 @@ on:
           - '2d'
           - '3d'
           - '7d'
+  # Also trigger on push to this specific branch for testing
+  push:
+    branches:
+      - fix-bedrock-eks-irsa-with-ttl-workflow
 
 jobs:
   build-and-push:
@@ -42,7 +46,7 @@ jobs:
       with:
         context: .
         push: true
-        tags: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}
+        tags: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}
         platforms: linux/amd64,linux/arm64
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -53,31 +57,31 @@ jobs:
         echo "Image successfully pushed to ttl.sh!"
         echo "================================================"
         echo ""
-        echo "Image URL: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo "Image URL: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}"
         echo ""
-        echo "This image will be available for ${{ inputs.ttl_duration }}"
+        echo "This image will be available for ${{ inputs.ttl_duration || '24h' }}"
         echo ""
         echo "To pull the image:"
-        echo "  docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo "  docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}"
         echo ""
         echo "To run the image:"
-        echo "  docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}"
+        echo "  docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}"
         echo "================================================"
         
     - name: Create job summary
       run: |
         echo "## 🐳 Docker Image Published to ttl.sh" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Image:** \`ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**TTL:** ${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "**TTL:** ${{ inputs.ttl_duration || '24h' }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Run Command" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "docker run -p 4000:4000 ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
