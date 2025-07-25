@@ -47,7 +47,7 @@ jobs:
         context: .
         push: true
         tags: ttl.sh/${{ steps.image.outputs.name }}:${{ inputs.ttl_duration || '24h' }}
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         cache-from: type=gha
         cache-to: type=gha,mode=max
         
