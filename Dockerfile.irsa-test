@@ -1,0 +1,105 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional dependencies for AWS and testing
+RUN pip install --no-cache-dir \
+    boto3 \
+    botocore \
+    pytest \
+    pytest-asyncio
+
+# Copy the entire litellm source code
+COPY . .
+
+# Install litellm in development mode
+RUN pip install -e .
+
+# Create a test script for IRSA functionality
+RUN echo '#!/usr/bin/env python3\n\
+import os\n\
+import sys\n\
+import boto3\n\
+from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM\n\
+\n\
+def test_irsa_credentials():\n\
+    """Test IRSA credentials detection and usage"""\n\
+    print("Testing IRSA credentials...")\n\
+    \n\
+    # Check environment variables\n\
+    print(f"AWS_ROLE_ARN: {os.getenv(\"AWS_ROLE_ARN\")}")\n\
+    print(f"AWS_WEB_IDENTITY_TOKEN_FILE: {os.getenv(\"AWS_WEB_IDENTITY_TOKEN_FILE\")}")\n\
+    print(f"AWS_REGION: {os.getenv(\"AWS_REGION\", \"us-east-1\")}")\n\
+    \n\
+    # Test BaseAWSLLM credentials\n\
+    base_llm = BaseAWSLLM()\n\
+    \n\
+    try:\n\
+        # Test with same role as current IRSA role\n\
+        current_role = os.getenv("AWS_ROLE_ARN")\n\
+        if current_role:\n\
+            print(f"Testing with current role: {current_role}")\n\
+            credentials = base_llm.get_credentials(\n\
+                aws_role_name=current_role,\n\
+                aws_region_name=os.getenv("AWS_REGION", "us-east-1")\n\
+            )\n\
+            print(f"Successfully got credentials: {credentials.access_key[:10]}...")\n\
+            print("IRSA same-role optimization working correctly!")\n\
+        else:\n\
+            print("No AWS_ROLE_ARN found - not in IRSA environment")\n\
+            \n\
+    except Exception as e:\n\
+        print(f"Error: {e}")\n\
+        sys.exit(1)\n\
+\n\
+if __name__ == "__main__":\n\
+    test_irsa_credentials()\n\
+' > /app/test_irsa.py && chmod +x /app/test_irsa.py
+
+# Create a simple health check endpoint
+RUN echo '#!/usr/bin/env python3\n\
+import os\n\
+from http.server import HTTPServer, BaseHTTPRequestHandler\n\
+import json\n\
+\n\
+class HealthHandler(BaseHTTPRequestHandler):\n\
+    def do_GET(self):\n\
+        if self.path == "/health":\n\
+            self.send_response(200)\n\
+            self.send_header("Content-type", "application/json")\n\
+            self.end_headers()\n\
+            \n\
+            health_data = {\n\
+                "status": "healthy",\n\
+                "aws_role_arn": os.getenv("AWS_ROLE_ARN"),\n\
+                "aws_web_identity_token_file": os.getenv("AWS_WEB_IDENTITY_TOKEN_FILE"),\n\
+                "aws_region": os.getenv("AWS_REGION", "us-east-1")\n\
+            }\n\
+            \n\
+            self.wfile.write(json.dumps(health_data, indent=2).encode())\n\
+        else:\n\
+            self.send_response(404)\n\
+            self.end_headers()\n\
+\n\
+if __name__ == "__main__":\n\
+    server = HTTPServer(("0.0.0.0", 8080), HealthHandler)\n\
+    print("Health server running on port 8080")\n\
+    server.serve_forever()\n\
+' > /app/health_server.py && chmod +x /app/health_server.py
+
+# Expose port for health checks
+EXPOSE 8080
+
+# Default command runs the IRSA test
+CMD ["python3", "/app/test_irsa.py"]

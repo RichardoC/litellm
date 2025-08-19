@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm-irsa-test
+  namespace: default
+  annotations:
+    # Replace with your actual IAM role ARN
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/LitellmRole
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-irsa-test
+  namespace: default
+  labels:
+    app: litellm-irsa-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm-irsa-test
+  template:
+    metadata:
+      labels:
+        app: litellm-irsa-test
+    spec:
+      serviceAccountName: litellm-irsa-test
+      containers:
+      - name: litellm-test
+        image: ttl.sh/litellm-irsa-test:1h
+        imagePullPolicy: Always
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+        # IRSA environment variables are automatically injected by EKS
+        # AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE will be set
+        ports:
+        - containerPort: 8080
+          name: health
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-irsa-test-service
+  namespace: default
+spec:
+  selector:
+    app: litellm-irsa-test
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: health
+  type: ClusterIP
+---
+# Optional: Create a Job to run the IRSA test once
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: litellm-irsa-test-job
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: litellm-irsa-test-job
+    spec:
+      serviceAccountName: litellm-irsa-test
+      containers:
+      - name: litellm-test
+        image: ttl.sh/litellm-irsa-test:1h
+        imagePullPolicy: Always
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+        command: ["python3", "/app/test_irsa.py"]
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      restartPolicy: Never
+  backoffLimit: 3

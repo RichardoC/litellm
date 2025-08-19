@@ -1,0 +1,90 @@
+name: Test IRSA Fix
+
+on:
+  push:
+    branches: [ fix-bedrock-eks-irsa-with-ttl-workflow ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'litellm/llms/bedrock/base_aws_llm.py'
+      - 'tests/test_litellm/llms/bedrock/test_base_aws_llm.py'
+
+jobs:
+  test-irsa-logic:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest boto3 botocore
+    
+    - name: Run IRSA-specific tests
+      run: |
+        python -m pytest tests/test_litellm/llms/bedrock/test_base_aws_llm.py::test_auth_with_aws_role_same_role_irsa -v
+        python -m pytest tests/test_litellm/llms/bedrock/test_base_aws_llm.py::test_auth_with_aws_role_irsa_environment -v
+        python -m pytest tests/test_litellm/llms/bedrock/test_base_aws_llm.py::test_eks_irsa_ambient_credentials_used -v
+
+  build-test-container:
+    runs-on: ubuntu-latest
+    needs: test-irsa-logic
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build test container
+      run: |
+        docker build -f Dockerfile.irsa-test -t litellm-irsa-test:latest .
+    
+    - name: Test container locally
+      run: |
+        # Test that the container builds and basic imports work
+        docker run --rm litellm-irsa-test:latest python3 -c "
+        import sys
+        import boto3
+        from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
+        print('Container test passed: All imports successful')
+        print(f'Python version: {sys.version}')
+        print(f'Boto3 version: {boto3.__version__}')
+        "
+    
+    - name: Push to ttl.sh (if on main branch)
+      if: github.ref == 'refs/heads/fix-bedrock-eks-irsa-with-ttl-workflow'
+      run: |
+        # Tag for ttl.sh
+        docker tag litellm-irsa-test:latest ttl.sh/litellm-irsa-test:1h
+        
+        # Push to ttl.sh (no auth required)
+        docker push ttl.sh/litellm-irsa-test:1h
+        
+        echo "Container pushed to ttl.sh/litellm-irsa-test:1h"
+        echo "Available for 1 hour for testing in Kubernetes clusters"
+
+  validate-k8s-manifests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Validate Kubernetes manifests
+      run: |
+        # Install kubeval for manifest validation
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo mv kubeval /usr/local/bin
+        
+        # Validate the manifest
+        kubeval k8s-irsa-test.yaml
+        
+        echo "Kubernetes manifests are valid"
